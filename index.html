@@ -2,7 +2,6 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <!-- 添加视口元标签 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TCFCA口语播放器</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -94,7 +93,7 @@
             }
 
             #subtitleText, #translateText {
-                font-size: 0.9rem;
+                font-size: 1.5 rem;
                 line-height: 1.5;
             }
 
@@ -116,12 +115,11 @@
     </style>
 </head>
 <body>
-    <!-- 原有HTML结构保持不变 -->
-    <h1>TCFCA口语播放器</h1>
+    <h1>音频播放器</h1>
     <div id="currentAudio">
         <p>当前播放：<span id="audioName">-</span></p>
         <p>字幕内容：<span id="subtitleText">-</span></p>
-        <span id="translateText">-</span>
+        <p>翻译内容：<span id="translateText">-</span></p>
     </div>
     
     <div class="controls">
@@ -136,9 +134,146 @@
     
     <p>播放时间：<span id="currentTime">0:00</span> / <span id="duration">0:00</span></p>
 
-    <!-- 原有JavaScript代码保持不变 -->
     <script>
-        // ...保持原有JavaScript代码不变...
+        // 初始化Supabase
+        const supabase = window.supabase.createClient(
+            'https://ljcnyljxxrnzqflvumcv.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqY255bGp4eHJuenFmbHZ1bWN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE5NTg2NDksImV4cCI6MjA1NzUzNDY0OX0.q5LzNGG1yqHM01RYpoSmOuN4DCV5Vd_ksTTNPbni7JA'
+        );
+
+        let audioList = []; // 存储音频列表
+        let currentIndex = 0; // 当前播放索引
+        const audioElement = new Audio();
+        let isInitialized = false; // 新增初始化状态标识
+        let autoPlayTimeout = null;
+
+        
+        // 初始化加载数据
+        async function init() {
+    try {
+        const { data, error } = await supabase
+            .from('subtitles')
+            .select('*')
+            .order('id', { ascending: true });
+
+        if (error) throw error;
+        
+        audioList = data;
+        console.log('加载到的音频列表:', audioList); // 调试输出
+        isInitialized = true;
+        
+        if (audioList.length > 0) {
+            loadAudio(currentIndex);
+        } else {
+            console.warn('数据库中没有音频数据');
+        }
+    } catch (err) {
+        console.error('初始化失败:', err);
+    }
+}
+        // 加载指定索引的音频
+        function loadAudio(index) {
+    if (!isInitialized) {
+        console.error('数据尚未加载完成');
+        return;
+    }
+    
+    if (index < 0 || index >= audioList.length) {
+        console.error('无效的索引:', index);
+        return;
+    }
+
+    const audioInfo = audioList[index];
+    if (!audioInfo?.audio_name) {
+        console.error('无效的音频数据:', audioInfo);
+        return;
+    }
+
+    // 显示信息
+    document.getElementById('audioName').textContent = audioInfo.audio_name;
+    document.getElementById('subtitleText').textContent = audioInfo.text || '无字幕内容';
+    document.getElementById('translateText').textContent = audioInfo.translate || '无翻译内容'; 
+
+    // 构建音频URL（重要修正！）
+    const audioUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.audio_name)}`;
+    console.log('正在加载音频:', audioUrl); // 调试输出
+
+    // 重置音频元素
+    audioElement.pause();
+    audioElement.src = audioUrl;
+    audioElement.load();
+}
+
+
+        // 切换播放/暂停
+        function togglePlay() {
+            if (audioElement.paused) {
+                audioElement.play();
+                document.getElementById('playBtn').textContent = '暂停';
+            } else {
+                audioElement.pause();
+                document.getElementById('playBtn').textContent = '播放';
+            }
+        }
+
+        function playPrevious() {
+    if (!isInitialized) return;
+    currentIndex = Math.max(0, currentIndex - 1);
+    loadAudio(currentIndex);
+    audioElement.play().catch(err => console.error('播放失败:', err));
+    updatePlayButton();
+}
+
+// 强化后的切换函数
+function playNext() {
+    if (!isInitialized) return;
+    currentIndex = Math.min(audioList.length - 1, currentIndex + 1);
+    loadAudio(currentIndex);
+    audioElement.play().catch(err => console.error('播放失败:', err));
+    updatePlayButton();
+}
+
+// 新增播放按钮状态更新
+function updatePlayButton() {
+    document.getElementById('playBtn').textContent = audioElement.paused ? '播放' : '暂停';
+}
+
+
+        // 时间更新监听
+        audioElement.addEventListener('timeupdate', () => {
+            const progress = (audioElement.currentTime / audioElement.duration) * 100;
+            document.getElementById('progressBar').style.width = `${progress}%`;
+            
+            // 格式化时间显示
+            document.getElementById('currentTime').textContent = 
+                formatTime(audioElement.currentTime);
+            document.getElementById('duration').textContent = 
+                formatTime(audioElement.duration);
+        });
+
+        // 播放结束自动下一首
+        audioElement.addEventListener('ended', playNext);
+
+        // 错误处理
+        audioElement.addEventListener('error', () => {
+            alert('音频加载失败，请检查控制台');
+            console.error('音频加载错误:', audioElement.error);
+        });
+
+        // 时间格式化函数
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            seconds = Math.floor(seconds % 60);
+            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        // 初始化
+        init().then(() => {
+    console.log('初始化完成');
+    if (audioList.length === 0) {
+        alert('没有可播放的音频');
+    }
+});
     </script>
 </body>
 </html>
