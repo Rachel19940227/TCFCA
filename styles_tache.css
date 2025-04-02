@@ -1,0 +1,111 @@
+
+/* 基础样式 */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0 auto;
+    padding: 15px;
+    max-width: 800px;
+    min-height: 100vh;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 移动端优化 */
+#currentAudio {
+    margin: 15px 0;
+    line-height: 1.6;
+}
+
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 25px 0;
+}
+
+button {
+    padding: 12px 20px;
+    font-size: 1rem;
+    border: none;
+    border-radius: 8px;
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+    transition: opacity 0.3s;
+    flex: 1;
+    max-width: 120px;
+}
+
+button:active {
+    opacity: 0.8;
+}
+
+.progress {
+    height: 6px;
+    background: #eee;
+    border-radius: 3px;
+    margin: 20px 0;
+}
+
+.progress-bar {
+    height: 100%;
+    background: #007bff;
+    border-radius: 3px;
+    transition: width 0.2s linear;
+}
+
+/* #translateText {
+    color: #666;
+    font-style: italic;
+    margin-top: 8px;
+    display: block;
+} */
+
+/* 媒体查询 - 移动端适配 */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+        margin: 10px 0;
+    }
+
+    button {
+        padding: 10px 15px;
+        font-size: 0.9rem;
+        max-width: none;
+    }
+
+    #currentAudio p {
+        margin: 8px 0;
+    }
+
+    #subtitleText, #translateText {
+        font-size: 1.5 rem;
+        line-height: 1.5;
+    }
+
+    #currentTime, #duration {
+        font-size: 0.8rem;
+    }
+}
+
+/* 横屏优化 */
+@media (orientation: landscape) {
+    .controls {
+        margin: 15px 0;
+    }
+    
+    button {
+        padding: 8px 12px;
+    }
+}
+#answerText {
+    white-space: pre-wrap; /* 保留换行 */
+    color: #666; /* 灰色字体 */
+}
