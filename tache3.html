@@ -32,8 +32,9 @@
     </div>
 
     
-    <div class="progress">
+    <div class="progress-container" id="progressContainer">
         <div class="progress-bar" id="progressBar"></div>
+        <div class="progress-thumb" id="progressThumb"></div>
     </div>
     
     <p>播放时间：<span id="currentTime">0:00</span> / <span id="duration">0:00</span></p>
@@ -76,36 +77,48 @@
             }
         }
 
-        async function loadAnswerAudio(index) {
-            const audioInfo = audioList[index];
-            
-            // 更新界面显示
-            document.getElementById('answerAudioName').textContent = audioInfo.answer_name || '无答案音频';
-            document.getElementById('subtitleText').textContent = audioInfo.text || '无字幕内容';
-            document.getElementById('translateText').textContent = audioInfo.translate || '无翻译内容';
-            document.getElementById('answerText').textContent = audioInfo.answer || '无答案内容';
-            document.getElementById('audioName').textContent = audioInfo.audio_name || '无问题音频';
+async function loadAnswerAudio(index) {
+    // 重置进度条状态
+    progressBar.style.width = '0%';
+    progressThumb.style.left = '0%';
+    document.getElementById('currentTime').textContent = '0:00';
+    document.getElementById('duration').textContent = '0:00';
 
-            // 加载答案音频（主控音频）
-            try {
-                mainAudioElement.pause();
-                const audioUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.answer_name)}`;
-                mainAudioElement.src = audioUrl;
-                await mainAudioElement.load();
-            } catch (err) {
-                console.error('答案音频加载失败:', err);
-            }
+    const audioInfo = audioList[index];
+    
+    // 更新界面显示
+    document.getElementById('answerAudioName').textContent = audioInfo.answer_name || '无答案音频';
+    document.getElementById('subtitleText').textContent = audioInfo.text || '无字幕内容';
+    document.getElementById('translateText').textContent = audioInfo.translate || '无翻译内容';
+    document.getElementById('answerText').textContent = audioInfo.answer || '无答案内容';
+    document.getElementById('audioName').textContent = audioInfo.audio_name || '无问题音频';
 
-            // 预加载问题音频
-            try {
-                questionAudioElement.pause();
-                const questionUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.audio_name)}`;
-                questionAudioElement.src = questionUrl;
-                await questionAudioElement.load();
-            } catch (err) {
-                console.error('问题音频加载失败:', err);
-            }
-        }
+    // 重置播放状态
+    document.getElementById('playBtn').textContent = '播放';
+
+    // 加载答案音频（主控音频）
+    try {
+        mainAudioElement.pause();
+        const audioUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.answer_name)}`;
+        mainAudioElement.src = audioUrl;
+        await mainAudioElement.load();
+        
+        // 加载完成后重置持续时间显示
+        document.getElementById('duration').textContent = formatTime(mainAudioElement.duration);
+    } catch (err) {
+        console.error('答案音频加载失败:', err);
+    }
+
+    // 预加载问题音频
+    try {
+        questionAudioElement.pause();
+        const questionUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.audio_name)}`;
+        questionAudioElement.src = questionUrl;
+        await questionAudioElement.load();
+    } catch (err) {
+        console.error('问题音频加载失败:', err);
+    }
+}
 
         // 修改控制函数
         function togglePlay() {
@@ -128,21 +141,88 @@
             }
         }
 
-        // 修改进度条和时间更新
-        mainAudioElement.addEventListener('timeupdate', () => {
-            const progress = (mainAudioElement.currentTime / mainAudioElement.duration) * 100;
-            document.getElementById('progressBar').style.width = `${progress}%`;
-            
-            document.getElementById('currentTime').textContent = 
-                formatTime(mainAudioElement.currentTime);
-            document.getElementById('duration').textContent = 
-                formatTime(mainAudioElement.duration);
-        });
 
+                // 获取进度条元素
+                const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressThumb = document.getElementById('progressThumb');
         
+        // 拖拽状态变量
+        let isDragging = false;
+        
+        // 点击进度条跳转
+        progressContainer.addEventListener('click', (e) => {
+            if (!mainAudioElement.duration) return;
+            
+            const rect = progressContainer.getBoundingClientRect();
+            const pos = (e.clientX - rect.left) / rect.width;
+            mainAudioElement.currentTime = pos * mainAudioElement.duration;
+        });
+
+        // 拖拽功能实现
+        progressThumb.addEventListener('mousedown', startDrag);
+        progressContainer.addEventListener('mousedown', startDrag);
+
+        document.addEventListener('mousemove', handleDrag);
+        document.addEventListener('mouseup', endDrag);
+
+        // 移动端支持
+        progressThumb.addEventListener('touchstart', startDrag);
+        progressContainer.addEventListener('touchstart', startDrag);
+        document.addEventListener('touchmove', handleDrag);
+        document.addEventListener('touchend', endDrag);
+
+        function startDrag(e) {
+            isDragging = true;
+            mainAudioElement.pause();
+            handleDrag(e);
+        }
+
+        function handleDrag(e) {
+            if (!isDragging) return;
+            
+            const rect = progressContainer.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            
+            if (!clientX) return;
+            
+            let pos = (clientX - rect.left) / rect.width;
+            pos = Math.max(0, Math.min(1, pos));
+            
+            const currentTime = pos * mainAudioElement.duration;
+            
+            // 更新显示
+            progressBar.style.width = `${pos * 100}%`;
+            progressThumb.style.left = `${pos * 100}%`;
+            document.getElementById('currentTime').textContent = formatTime(currentTime);
+            
+            // 实时更新音频时间（但不立即设置，等待拖动结束）
+            if (!e.type.includes('touch')) {
+                e.preventDefault();
+            }
+        }
+
+        function endDrag(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            const rect = progressContainer.getBoundingClientRect();
+            const clientX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
+            
+            if (clientX) {
+                const pos = (clientX - rect.left) / rect.width;
+                mainAudioElement.currentTime = Math.max(0, Math.min(mainAudioElement.duration, pos * mainAudioElement.duration));
+            }
+            
+            mainAudioElement.play();
+        }
+
         // 修改进度条和时间更新
         mainAudioElement.addEventListener('timeupdate', () => {
+            if (isDragging) return;   
             const progress = (mainAudioElement.currentTime / mainAudioElement.duration) * 100;
+            progressBar.style.width = `${progress}%`;
+            progressThumb.style.left = `${progress}%`;
             document.getElementById('progressBar').style.width = `${progress}%`;
             
             document.getElementById('currentTime').textContent = 
@@ -151,18 +231,33 @@
                 formatTime(mainAudioElement.duration);
         });
 
-        // 修改切换条目函数
-        function playPrevious() {
-            if (!isInitialized) return;
-            currentIndex = Math.max(0, currentIndex - 1);
-            loadAnswerAudio(currentIndex);
-        }
+        // 确保音频加载后显示滑块
+        mainAudioElement.addEventListener('loadedmetadata', () => {
+            progressThumb.style.display = 'block';
+        });
 
-        async function playNext() {
-            if (!isInitialized) return;
-            currentIndex = Math.min(audioList.length - 1, currentIndex + 1);
-            await loadAnswerAudio(currentIndex);
-        }
+        // 修改播放结束事件监听
+        mainAudioElement.addEventListener('ended', () => {
+            // 重置进度条
+            progressBar.style.width = '0%';
+            progressThumb.style.left = '0%';
+            document.getElementById('currentTime').textContent = '0:00';
+            playNext();
+        });
+
+
+// 修改切换条目函数
+function playPrevious() {
+    if (!isInitialized) return;
+    currentIndex = Math.max(0, currentIndex - 1);
+    loadAnswerAudio(currentIndex);
+}
+
+async function playNext() {
+    if (!isInitialized) return;
+    currentIndex = Math.min(audioList.length - 1, currentIndex + 1);
+    await loadAnswerAudio(currentIndex);
+}
 
         // 更新初始化调用
         init().then(() => {
