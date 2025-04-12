@@ -15,16 +15,22 @@
     </div>
     
     <div id="currentAudio">
-        <p>当前播放：<span id="audioName">-</span></p>
+        <p>当前播放：<span id="answerAudioName">-</span></p> <!-- 显示答案音频名称 -->
         <p>字幕内容：<span id="subtitleText">-</span></p>
         <p>翻译内容：<span id="translateText">-</span></p>
+        <p>答案内容：<span id="answerText">-</span></p>
+        <p>问题音频：<span id="audioName">-</span> <!-- 显示原音频名称 -->
+            <button onclick="toggleMainAudio()" id="mainPlayBtn">播放问题</button>
+        </p>
     </div>
+
     
     <div class="controls">
         <button onclick="playPrevious()">上一条</button>
         <button onclick="togglePlay()" id="playBtn">播放</button>
         <button onclick="playNext()">下一条</button>
     </div>
+
     
     <div class="progress">
         <div class="progress-bar" id="progressBar"></div>
@@ -41,122 +47,133 @@
 
         let audioList = []; // 存储音频列表
         let currentIndex = 0; // 当前播放索引
-        const audioElement = new Audio();
         let isInitialized = false; // 新增初始化状态标识
         let autoPlayTimeout = null;
+        let currentAnswerIndex = -1; // 跟踪当前答案音频索引
+        let answerAbortController = new AbortController();
+        let isAnswerLoading = false;
+        const mainAudioElement = new Audio(); // 原answerAudioElement改为播放主内容
+        const questionAudioElement = new Audio(); // 原audioElement改为播放问题音频
 
-        
-        // 初始化加载数据
+        // 修改初始化函数
         async function init() {
-    try {
-        const { data, error } = await supabase
-            .from('subtitles')
-            .select('*')
-            .order('id', { ascending: true });
+            try {
+                const { data, error } = await supabase
+                    .from('subtitles')
+                    .select('*')
+                    .order('id', { ascending: true });
 
-        if (error) throw error;
-        
-        audioList = data;
-        console.log('加载到的音频列表:', audioList); // 调试输出
-        isInitialized = true;
-        
-        if (audioList.length > 0) {
-            loadAudio(currentIndex);
-        } else {
-            console.warn('数据库中没有音频数据');
+                if (error) throw error;
+                
+                audioList = data;
+                isInitialized = true;
+                
+                if (audioList.length > 0) {
+                    loadAnswerAudio(currentIndex); // 改为加载答案音频
+                }
+            } catch (err) {
+                console.error('初始化失败:', err);
+            }
         }
-    } catch (err) {
-        console.error('初始化失败:', err);
-    }
-}
-        // 加载指定索引的音频
-        function loadAudio(index) {
-    if (!isInitialized) {
-        console.error('数据尚未加载完成');
-        return;
-    }
-    
-    if (index < 0 || index >= audioList.length) {
-        console.error('无效的索引:', index);
-        return;
-    }
 
-    const audioInfo = audioList[index];
-    if (!audioInfo?.audio_name) {
-        console.error('无效的音频数据:', audioInfo);
-        return;
-    }
+        async function loadAnswerAudio(index) {
+            const audioInfo = audioList[index];
+            
+            // 更新界面显示
+            document.getElementById('answerAudioName').textContent = audioInfo.answer_name || '无答案音频';
+            document.getElementById('subtitleText').textContent = audioInfo.text || '无字幕内容';
+            document.getElementById('translateText').textContent = audioInfo.translate || '无翻译内容';
+            document.getElementById('answerText').textContent = audioInfo.answer || '无答案内容';
+            document.getElementById('audioName').textContent = audioInfo.audio_name || '无问题音频';
 
-    // 显示信息
-    document.getElementById('audioName').textContent = audioInfo.audio_name;
-    document.getElementById('subtitleText').textContent = audioInfo.text || '无字幕内容';
-    document.getElementById('translateText').textContent = audioInfo.translate || '无翻译内容'; 
+            // 加载答案音频（主控音频）
+            try {
+                mainAudioElement.pause();
+                const audioUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.answer_name)}`;
+                mainAudioElement.src = audioUrl;
+                await mainAudioElement.load();
+            } catch (err) {
+                console.error('答案音频加载失败:', err);
+            }
 
-    // 构建音频URL（重要修正！）
-    const audioUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.audio_name)}`;
-    console.log('正在加载音频:', audioUrl); // 调试输出
+            // 预加载问题音频
+            try {
+                questionAudioElement.pause();
+                const questionUrl = `${supabase.storageUrl}/object/public/audio/${encodeURIComponent(audioInfo.audio_name)}`;
+                questionAudioElement.src = questionUrl;
+                await questionAudioElement.load();
+            } catch (err) {
+                console.error('问题音频加载失败:', err);
+            }
+        }
 
-    // 重置音频元素
-    audioElement.pause();
-    audioElement.src = audioUrl;
-    audioElement.load();
-}
-
-
-        // 切换播放/暂停
+        // 修改控制函数
         function togglePlay() {
-            if (audioElement.paused) {
-                audioElement.play();
+            if (mainAudioElement.paused) {
+                mainAudioElement.play();
                 document.getElementById('playBtn').textContent = '暂停';
             } else {
-                audioElement.pause();
+                mainAudioElement.pause();
                 document.getElementById('playBtn').textContent = '播放';
             }
         }
 
-        function playPrevious() {
-    if (!isInitialized) return;
-    currentIndex = Math.max(0, currentIndex - 1);
-    loadAudio(currentIndex);
-    audioElement.play().catch(err => console.error('播放失败:', err));
-    updatePlayButton();
-}
+        // 修改问题音频播放函数
+        function toggleMainAudio() {
+            if (questionAudioElement.paused) {
+                mainAudioElement.pause();
+                questionAudioElement.play();
+            } else {
+                questionAudioElement.pause();
+            }
+        }
 
-// 强化后的切换函数
-function playNext() {
-    if (!isInitialized) return;
-    currentIndex = Math.min(audioList.length - 1, currentIndex + 1);
-    loadAudio(currentIndex);
-    audioElement.play().catch(err => console.error('播放失败:', err));
-    updatePlayButton();
-}
-
-// 新增播放按钮状态更新
-function updatePlayButton() {
-    document.getElementById('playBtn').textContent = audioElement.paused ? '播放' : '暂停';
-}
-
-
-        // 时间更新监听
-        audioElement.addEventListener('timeupdate', () => {
-            const progress = (audioElement.currentTime / audioElement.duration) * 100;
+        // 修改进度条和时间更新
+        mainAudioElement.addEventListener('timeupdate', () => {
+            const progress = (mainAudioElement.currentTime / mainAudioElement.duration) * 100;
             document.getElementById('progressBar').style.width = `${progress}%`;
             
-            // 格式化时间显示
             document.getElementById('currentTime').textContent = 
-                formatTime(audioElement.currentTime);
+                formatTime(mainAudioElement.currentTime);
             document.getElementById('duration').textContent = 
-                formatTime(audioElement.duration);
+                formatTime(mainAudioElement.duration);
         });
 
-        // 播放结束自动下一首
-        audioElement.addEventListener('ended', playNext);
-
-        // 错误处理
-        audioElement.addEventListener('error', () => {
-            alert('音频加载失败，请检查控制台');
-            console.error('音频加载错误:', audioElement.error);
+        
+        // 修改进度条和时间更新
+        mainAudioElement.addEventListener('timeupdate', () => {
+            const progress = (mainAudioElement.currentTime / mainAudioElement.duration) * 100;
+            document.getElementById('progressBar').style.width = `${progress}%`;
+            
+            document.getElementById('currentTime').textContent = 
+                formatTime(mainAudioElement.currentTime);
+            document.getElementById('duration').textContent = 
+                formatTime(mainAudioElement.duration);
         });
+
+        // 修改切换条目函数
+        function playPrevious() {
+            if (!isInitialized) return;
+            currentIndex = Math.max(0, currentIndex - 1);
+            loadAnswerAudio(currentIndex);
+        }
+
+        async function playNext() {
+            if (!isInitialized) return;
+            currentIndex = Math.min(audioList.length - 1, currentIndex + 1);
+            await loadAnswerAudio(currentIndex);
+        }
+
+        // 更新初始化调用
+        init().then(() => {
+            if (audioList.length === 0) {
+                alert('没有可播放的音频');
+            } else {
+                mainAudioElement.addEventListener('ended', playNext);
+            }
+        });
+
+
 
         // 时间格式化函数
         function formatTime(seconds) {
@@ -165,13 +182,6 @@ function updatePlayButton() {
             return `${minutes}:${seconds.toString().padStart(2, '0')}`;
         }
 
-        // 初始化
-        init().then(() => {
-    console.log('初始化完成');
-    if (audioList.length === 0) {
-        alert('没有可播放的音频');
-    }
-});
     </script>
 </body>
 </html>
